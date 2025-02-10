@@ -1,18 +1,8 @@
 # MMM-Pir
+## ⚠ The original user bugsounet deleted his repositories. So this is a copy of the repository. I cannot give support. You may open pull request and issues - maybe someone can adress them in the future. However I can not
 
 After a configured time without any user interaction the display will turn off and hide all modules for economy mode.<br>
 It will wake up with a Pir sensor, Touch screen or crontab
-
-## Screenshot
-
-![](https://raw.githubusercontent.com/bugsounet/MMM-Pir/dev/screenshot/screenshot.png)
-
-![](https://raw.githubusercontent.com/bugsounet/MMM-Pir/dev/screenshot/screenshot2.png)
-
-![](https://raw.githubusercontent.com/bugsounet/MMM-Pir/dev/screenshot/screenshot3.png)
-
-![](https://raw.githubusercontent.com/bugsounet/MMM-Pir/dev/screenshot/screenshot4.png)
-
 
 ## Installation
 
@@ -22,7 +12,7 @@ It will wake up with a Pir sensor, Touch screen or crontab
 Clone the module into your MagicMirror module folder and execute `npm run setup` in the module's directory.
 ```sh
 cd ~/MagicMirror/modules
-git clone https://github.com/bugsounet/MMM-Pir
+git clone https://github.com/Coernel82/MMM-Pir
 cd MMM-Pir
 npm run setup
 ```
