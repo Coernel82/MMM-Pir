@@ -1,0 +1,65 @@
+{
+  "name": "MMM-Pir",
+  "version": "2.4.4",
+  "description": "Screen manager",
+  "keywords": [
+    "magic mirror",
+    "module",
+    "screen",
+    "motion detection"
+  ],
+  "homepage": "https://github.com/bugsounet/MMM-Pir",
+  "bugs": {
+    "url": "https://www.bugsounet.fr/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bugsounet/MMM-Pir"
+  },
+  "license": "MIT",
+  "author": "bugsounet",
+  "main": "MMM-Pir.js",
+  "scripts": {
+    "clean": "rm -rf node_modules package-lock.json",
+    "dependencies": "installer/dependencies.sh -d 'unclutter ddcutil cec-utils python3 python-is-python3 python3-gpiozero gpiod libgpiod2 libgpiod-dev'",
+    "dev": "cd installer && node dev.js",
+    "dev:src": "cd installer && node src.js",
+    "preinstall": "echo ⚠ npm install will be deprecated on next release!.",
+    "install": "npm run setup",
+    "postinstall": "echo ⚠ On next release, Please use: npm run setup",
+    "lint": "eslint . --config eslint.config.mjs",
+    "lint:fix": "eslint . --config eslint.config.mjs --fix",
+    "pinctrl": "installer/pinctrl.sh",
+    "rebuild": "installer/rebuild.sh",
+    "reset": "rm -f *.js && rm -rf components/*.js && git reset --hard",
+    "presetup": "npm run dependencies && installer/preinstall.sh",
+    "setup": "npm prune",
+    "postsetup": "installer/postinstall.sh -m -r",
+    "test": "npm run lint",
+    "test:minify": "cd installer && node minify.js",
+    "update": "installer/update.sh"
+  },
+  "dependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "cron-parser": "^4.9.0",
+    "esbuild": "^0.24.2",
+    "fdir": "^6.4.2",
+    "lodash": "^4.17.21",
+    "long-press-event": "^2.5.0",
+    "nan": "^2.22.0",
+    "node-cron": "^3.0.3",
+    "node-libgpiod": "^0.4.6",
+    "progressbar.js": "^1.1.1",
+    "python-shell": "^5.0.0"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "^2.12.1",
+    "eslint": "^9.17.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-package-json": "^0.19.0"
+  },
+  "engines": {
+    "node": ">=20.9.0 <21 || >=22"
+  },
+  "rev": "250102"
+}
