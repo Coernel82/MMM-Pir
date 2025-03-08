@@ -2,6 +2,7 @@
 /** bugsounet **/
 
 var log = () => { /* do nothing */ };
+const Utils = require("./utils");
 
 class PIR {
   constructor (config, callback) {
@@ -10,7 +11,9 @@ class PIR {
     this.default = {
       debug: false,
       gpio: 21,
-      mode: 0
+      mode: 0,
+      chip: "auto",
+      triggerMode: "LH"
     };
     this.config = Object.assign({}, this.default, this.config);
     if (this.config.debug) log = (...args) => { console.log("[MMM-Pir] [LIB] [PIR]", ...args); };
@@ -21,11 +24,28 @@ class PIR {
     this.pirChipNumber = -1;
     this.pirInterval = null;
     this.pirReadyToDetect = false;
+    if (Utils.isWin()) {
+      console.log("[MMM-Pir] [LIB] [PIR] [Windows] Pir library Disabled.");
+      if (this.config.gpio) this.config.gpio = 0;
+    }
   }
 
   start () {
     if (this.running) return;
     if (this.config.gpio === 0) return console.log("[MMM-Pir] [LIB] [PIR] Disabled.");
+    switch (this.config.triggerMode) {
+      case "LH":
+        console.log("[MMM-Pir] [LIB] [PIR] triggerMode LH Selected: Read LOW (0, no-motion) to HIGH (1, motion)");
+        break;
+      case "H":
+        console.log("[MMM-Pir] [LIB] [PIR] triggerMode H Selected: Read HIGH (1, motion)");
+        break;
+      default:
+        console.warn(`[MMM-Pir] [LIB] [PIR] triggerMode: ${this.config.mode} is not a valid value`);
+        console.warn("[MMM-Pir] [LIB] [PIR] set triggerMode LH");
+        this.config.triggerMode = "LH";
+        break;
+    }
     switch (this.config.mode) {
       case 0:
         console.log("[MMM-Pir] [LIB] [PIR] Mode 0 Selected (gpiod library)");
@@ -85,8 +105,10 @@ class PIR {
           if (this.pirReadyToDetect) {
             log("Motion Detected");
             this.callback("PIR_DETECTED");
-            this.pirReadyToDetect = false;
-            log("Debug: Set motion detect ready to:", this.pirReadyToDetect);
+            if (this.config.triggerMode === "LH") {
+              this.pirReadyToDetect = false;
+              log("Debug: Set motion detect ready to:", this.pirReadyToDetect);
+            }
           }
           break;
         case "NoMotion":
@@ -130,9 +152,12 @@ class PIR {
           this.pirChip = new Chip(number);
           const label = this.pirChip.getChipLabel();
           log(`[GPIOD] Check chip ${number}: ${label}`);
-          if (label.includes("pinctrl-")) {
+          const isAuto = this.config.chip === "auto" && label.includes("pinctrl-");
+          const isManual = this.config.chip !== "auto" && label.includes(this.config.chip);
+
+          if (isAuto || isManual) {
             // found chip
-            console.log(`[MMM-Pir] [LIB] [PIR] [GPIOD] Found chip ${number}: ${label}`);
+            console.log(`[MMM-Pir] [LIB] [PIR] [GPIOD] - ${isAuto ? "Auto" : "Manual"} - Found chip ${number}: ${label}`);
             this.pirChipNumber = number;
             return false;
           }
@@ -172,7 +197,7 @@ class PIR {
       if (this.running) {
         try {
           var value = line.getValue();
-          if (value !== this.oldstate) {
+          if (value !== this.oldstate || this.config.triggerMode === "H") {
             this.oldstate = value;
             log(`Sensor read value: ${value}`);
             if (value === 1) {

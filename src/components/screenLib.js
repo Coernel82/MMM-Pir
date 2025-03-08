@@ -5,8 +5,8 @@
 
 const exec = require("child_process").exec;
 const process = require("process");
-const moment = require("moment");
-const lodash = require("lodash");
+const dayjs = require("dayjs");
+const Utils = require("./utils");
 
 var log = () => { /* do nothing */ };
 
@@ -20,6 +20,7 @@ class SCREEN {
       debug: false,
       timeout: 5 * 60 * 1000,
       mode: 1,
+      ecoMode: true,
       relayGPIOPin: 0,
       availability: true,
       autoDimmer: false,
@@ -30,10 +31,11 @@ class SCREEN {
       ddcutil: {
         powerOnCode: "01",
         powerOffCode: "04",
-        skipSetVcpCheck: false
+        skipSetVcpCheck: false,
+        setPowerRetries: 0
       }
     };
-    this.config = lodash.defaultsDeep(this.config, this.default, {});
+    this.config = Utils.configMerge({}, this.default, this.config);
     if (this.config.debug) log = (...args) => { console.log("[MMM-Pir] [LIB] [SCREEN]", ...args); };
     this.screen = {
       mode: this.config.mode,
@@ -133,6 +135,15 @@ class SCREEN {
       case 8:
         console.log("[MMM-Pir] [LIB] [SCREEN] Mode 8: relais");
         break;
+      case 9:
+        if (Utils.isWin()) {
+          console.log("[MMM-Pir] [LIB] [SCREEN] Mode 9: Windows (test)");
+        } else {
+          console.error("[MMM-Pir] [LIB] [SCREEN] Mode 9 is reserved for windows OS -- Set mode to 0 (Disabled)");
+          this.sendSocketNotification("SCREEN_ERROR", "Mode 9 is reserved for windows OS -- Set mode to 0 (Disabled)");
+          this.config.mode = 0;
+        }
+        break;
       default:
         console.error(`[MMM-Pir] [LIB] [SCREEN] Unknow Mode (${this.config.mode}) Set to 0 (Disabled)`);
         this.sendSocketNotification("SCREEN_ERROR", `Unknow Mode (${this.config.mode}) Set to 0 (Disabled)`);
@@ -157,15 +168,7 @@ class SCREEN {
     this.screenStatus();
   }
 
-  activate () {
-    process.on("exit", () => {
-      if (this.config.mode) this.setPowerDisplay(true);
-      this.governor("WORKING");
-    });
-    this.start();
-  }
-
-  start (restart) {
+  async start (restart) {
     if (this.screen.locked || this.screen.running) return;
     if (!restart) log("Start.");
     else log("Restart.");
@@ -174,7 +177,18 @@ class SCREEN {
     this.sendSocketNotification("SCREEN_PRESENCE", true);
     if (!this.screen.power) {
       this.governor("WORKING");
-      if (this.config.mode) this.wantedPowerDisplay(true);
+      if (this.config.mode) {
+        if (this.config.mode === 5 && this.config.ddcutil.setPowerRetries > 0) {
+          let retries = 0;
+          let success = await this.wantedPowerDisplay(true);
+          while (retries < this.config.ddcutil.setPowerRetries && !success) {
+            console.info("[MMM-Pir] [LIB] [SCREEN] Retrying set power");
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            success = await this.wantedPowerDisplay(true);
+            retries++;
+          }
+        } else this.wantedPowerDisplay(true);
+      }
       this.sendSocketNotification("SCREEN_SHOWING");
       this.screen.power = true;
     }
@@ -201,7 +215,7 @@ class SCREEN {
         this.screen.output.dimmer = 1 - ((this.screen.dimmerFrom - this.counter) / this.screen.dimmerFrom);
       }
 
-      this.screen.output.timer = moment(new Date(this.counter)).format("mm:ss");
+      this.screen.output.timer = dayjs(new Date(this.counter)).format("mm:ss");
       this.screen.output.bar = (this.counter / this.config.timeout).toFixed(3);
 
       this.sendSocketNotification("SCREEN_OUTPUT", this.screen.output);
@@ -219,7 +233,7 @@ class SCREEN {
 
   forceTurnOffScreen () {
     if (!this.screen.power) return log("forceTurnOffScreen: already off");
-    this.sendSocketNotification("SCREEN_HIDING");
+    if (this.config.ecoMode) this.sendSocketNotification("SCREEN_HIDING");
     this.screen.power = false;
     if (this.config.mode) this.wantedPowerDisplay(false);
     this.screen.dimmer = 0;
@@ -282,375 +296,449 @@ class SCREEN {
     this.forceTurnOffScreen();
   }
 
-  wantedPowerDisplay (wanted) {
+  async wantedPowerDisplay (wanted) {
     var actual = false;
-    switch (this.config.mode) {
-      case 0:
-        // disabled
-        log("Disabled mode");
-        break;
-      case 1:
-        // dpms rpi
-        actual = false;
-        exec("DISPLAY=:0 xset q | grep Monitor", (err, stdout) => {
-          if (err) {
-            console.error(`[MMM-Pir] [LIB] [SCREEN] ${err}`);
-            this.sendSocketNotification("SCREEN_ERROR", "dpms command error (mode: 1)");
-          }
-          else {
-            let responseSh = stdout.trim();
-            var displaySh = responseSh.split(" ")[2];
-            if (displaySh === "On") actual = true;
-            this.resultDisplay(actual, wanted);
-          }
-        });
-        break;
-      case 2:
-        // xrandr on primary display
-        exec("xrandr | grep 'connected primary'",
-          (err, stdout) => {
+    return new Promise((resolve) => {
+      switch (this.config.mode) {
+        case 0:
+          // disabled
+          log("Disabled mode");
+          resolve(true);
+          break;
+        case 1:
+          // dpms rpi
+          actual = false;
+          exec("DISPLAY=:0 xset q | grep Monitor", async (err, stdout) => {
             if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] xrandr: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "xrandr command error (mode: 2)");
+              console.error(`[MMM-Pir] [LIB] [SCREEN] ${err}`);
+              this.sendSocketNotification("SCREEN_ERROR", "dpms command error (mode: 1)");
+              resolve(false);
             }
             else {
               let responseSh = stdout.trim();
-              var power = "on";
-              this.screen.hdmiPort = responseSh.split(" ")[0];
-              if (responseSh.split(" ")[3] === "(normal") power = "off";
-              if (power === "on") actual = true;
-              log(`[MODE 2] Monitor on ${this.screen.hdmiPort} is ${power}`);
-              this.resultDisplay(actual, wanted);
+              var displaySh = responseSh.split(" ")[2];
+              if (displaySh === "On") actual = true;
+              resolve(await this.resultDisplay(actual, wanted));
             }
           });
-        break;
-      case 3:
-        // wlr-randr
-        exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlr-randr | grep 'Enabled'`,
-          (err, stdout) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] wlr-randr: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "wlr-randr command error (mode: 3)");
-            } else {
-              let responseSh = stdout.trim();
-              if (responseSh.split(" ")[1] === "yes") actual = true;
-              exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlr-randr`,
-                (err, stdout) => {
-                  if (err) {
-                    console.error(`[MMM-Pir] [LIB] [SCREEN] wlr-randr: ${err}`);
-                    this.sendSocketNotification("SCREEN_ERROR", "wlr-randr scan screen command error (mode: 3)");
-                  } else {
-                    let wResponse = stdout.trim();
-                    this.screen.hdmiPort = wResponse.split(" ")[0];
-                    log(`[MODE 3] Monitor on ${this.screen.hdmiPort} is ${actual}`);
-                    this.resultDisplay(actual, wanted);
-                  }
-                });
-            }
-          });
-        break;
-      case 4:
-        // CEC
-        exec("echo 'pow 0' | cec-client -s -d 1", (err, stdout) => {
-          if (err) {
-            console.error(`[MMM-Pir] [LIB] [SCREEN] ${err}`);
-            console.error(`[MMM-Pir] [LIB] [SCREEN] HDMI CEC Error: ${stdout}`);
-            this.sendSocketNotification("SCREEN_ERROR", "HDMI CEC command error (mode: 4)");
-          } else {
-            let responseSh = stdout.trim();
-            var displaySh = responseSh.split("\n")[1].split(" ")[2];
-            if (displaySh === "on") actual = true;
-            if (displaySh === "unknown") log("HDMI CEC unknow state");
-            this.resultDisplay(actual, wanted);
-          }
-        });
-        break;
-      case 5:
-        // ddcutil
-        exec("ddcutil getvcp d6", (err, stdout) => {
-          if (err) {
-            console.error(`[MMM-Pir] [LIB] [SCREEN] ddcutil Error ${err}`);
-            this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode: 5)");
-          }
-          else {
-            let responseSh = stdout.trim();
-            var displaySh = responseSh.split("(sl=")[1];
-            if (displaySh === "0x01)") actual = true;
-            this.resultDisplay(actual, wanted);
-          }
-        });
-        break;
-      case 6:
-        // dmps linux
-        exec("xset q | grep Monitor", (err, stdout) => {
-          if (err) {
-            console.error(`[MMM-Pir] [LIB] [SCREEN] [Display Error] dpms linux: ${err}`);
-            this.sendSocketNotification("SCREEN_ERROR", "dpms linux command error (mode: 6)");
-          }
-          else {
-            let responseSh = stdout.trim();
-            var displaySh = responseSh.split(" ")[2];
-            if (displaySh === "On") actual = true;
-            this.resultDisplay(actual, wanted);
-          }
-        });
-        break;
-      case 7:
-        // labwc
-        exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlopm --json`,
-          (err, stdout) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] wlopm: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "wlopm command error (mode: 7)");
-            } else {
-              let responseSh = stdout.trim();
-              try {
-                let responseJson = JSON.parse(responseSh);
-                let responseOutput = responseJson[0];
-                if (responseOutput.error) {
-                  console.error(`[MMM-Pir] [LIB] [SCREEN] wlopm report arror: ${responseOutput.error}`);
-                  this.sendSocketNotification("SCREEN_ERROR", "scan screen command report error (mode: 7)");
-                } else {
-                  this.screen.hdmiPort = responseOutput.output;
-                  if (responseOutput["power-mode"] === "on") actual = true;
-                  log(`[MODE 7] Monitor on ${this.screen.hdmiPort} from ${this.screen.waylandDisplayName} is ${actual}`);
-                  this.resultDisplay(actual, wanted);
-                }
-              } catch (error) {
-                console.error(`[MMM-Pir] [LIB] [SCREEN] wlopm: ${error}`);
-                console.error(`[MMM-Pir] [LIB] [SCREEN] wlopm response: ${responseSh}`);
-                this.sendSocketNotification("SCREEN_ERROR", "scan screen command error (mode: 7)");
+          break;
+        case 2:
+          // xrandr on primary display
+          exec("xrandr | grep 'connected primary'",
+            async (err, stdout) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] xrandr: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "xrandr command error (mode: 2)");
+                resolve(false);
               }
+              else {
+                let responseSh = stdout.trim();
+                var power = "on";
+                this.screen.hdmiPort = responseSh.split(" ")[0];
+                if (responseSh.split(" ")[3] === "(normal") power = "off";
+                if (power === "on") actual = true;
+                log(`[MODE 2] Monitor on ${this.screen.hdmiPort} is ${power}`);
+                resolve(await this.resultDisplay(actual, wanted));
+              }
+            });
+          break;
+        case 3:
+          // wlr-randr
+          exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlr-randr | grep 'Enabled'`,
+            (err, stdout) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] wlr-randr: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "wlr-randr command error (mode: 3)");
+                resolve(false);
+              } else {
+                let responseSh = stdout.trim();
+                if (responseSh.split(" ")[1] === "yes") actual = true;
+                exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlr-randr`,
+                  async (err, stdout) => {
+                    if (err) {
+                      console.error(`[MMM-Pir] [LIB] [SCREEN] wlr-randr: ${err}`);
+                      this.sendSocketNotification("SCREEN_ERROR", "wlr-randr scan screen command error (mode: 3)");
+                      resolve(false);
+                    } else {
+                      let wResponse = stdout.trim();
+                      this.screen.hdmiPort = wResponse.split(" ")[0];
+                      log(`[MODE 3] Monitor on ${this.screen.hdmiPort} is ${actual}`);
+                      resolve(await this.resultDisplay(actual, wanted));
+                    }
+                  });
+              }
+            });
+          break;
+        case 4:
+          // CEC
+          exec("echo 'pow 0' | cec-client -s -d 1", async (err, stdout) => {
+            if (err) {
+              console.error(`[MMM-Pir] [LIB] [SCREEN] ${err}`);
+              console.error(`[MMM-Pir] [LIB] [SCREEN] HDMI CEC Error: ${stdout}`);
+              this.sendSocketNotification("SCREEN_ERROR", "HDMI CEC command error (mode: 4)");
+              resolve(false);
+            } else {
+              let responseSh = stdout.trim();
+              var displaySh = responseSh.split("\n")[1].split(" ")[2];
+              if (displaySh === "on") actual = true;
+              if (displaySh === "unknown") log("HDMI CEC unknow state");
+              resolve(await this.resultDisplay(actual, wanted));
             }
           });
-        break;
-      case 8:
-        // pinctrl
-        exec(`pinctrl lev ${this.config.relayGPIOPin}`, (err, stdout) => {
-          if (err) {
-            console.error(`[MMM-Pir] [LIB] [SCREEN] pinctrl get: ${err}`);
-            this.sendSocketNotification("SCREEN_ERROR", "pinctrl linux command error (mode: 8)");
-          }
-          else {
-            let responseSh = stdout.trim();
-            if (responseSh === "1") {
-              actual = true;
-            } else {
-              actual = false;
+          break;
+        case 5:
+          // ddcutil
+          exec("ddcutil getvcp d6", async (err, stdout) => {
+            if (err) {
+              console.error(`[MMM-Pir] [LIB] [SCREEN] ddcutil Error ${err}`);
+              this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode: 5)");
+              resolve(false);
             }
-            this.resultDisplay(actual, wanted);
-          }
-        });
-        break;
-    }
+            else {
+              let responseSh = stdout.trim();
+              var displaySh = responseSh.split("(sl=")[1];
+              if (displaySh === "0x01)") actual = true;
+              resolve(await this.resultDisplay(actual, wanted));
+            }
+          });
+          break;
+        case 6:
+          // dmps linux
+          exec("xset q | grep Monitor", async (err, stdout) => {
+            if (err) {
+              console.error(`[MMM-Pir] [LIB] [SCREEN] [Display Error] dpms linux: ${err}`);
+              this.sendSocketNotification("SCREEN_ERROR", "dpms linux command error (mode: 6)");
+              resolve(false);
+            }
+            else {
+              let responseSh = stdout.trim();
+              var displaySh = responseSh.split(" ")[2];
+              if (displaySh === "On") actual = true;
+              resolve(await this.resultDisplay(actual, wanted));
+            }
+          });
+          break;
+        case 7:
+          // labwc
+          exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlopm --json`,
+            async (err, stdout) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] wlopm: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "wlopm command error (mode: 7)");
+                resolve(false);
+              } else {
+                let responseSh = stdout.trim();
+                try {
+                  let responseJson = JSON.parse(responseSh);
+                  let responseOutput = responseJson[0];
+                  if (responseOutput.error) {
+                    console.error(`[MMM-Pir] [LIB] [SCREEN] wlopm report arror: ${responseOutput.error}`);
+                    this.sendSocketNotification("SCREEN_ERROR", "scan screen command report error (mode: 7)");
+                    resolve(false);
+                  } else {
+                    this.screen.hdmiPort = responseOutput.output;
+                    if (responseOutput["power-mode"] === "on") actual = true;
+                    log(`[MODE 7] Monitor on ${this.screen.hdmiPort} from ${this.screen.waylandDisplayName} is ${actual}`);
+                    resolve(await this.resultDisplay(actual, wanted));
+                  }
+                } catch (error) {
+                  console.error(`[MMM-Pir] [LIB] [SCREEN] wlopm: ${error}`);
+                  console.error(`[MMM-Pir] [LIB] [SCREEN] wlopm response: ${responseSh}`);
+                  this.sendSocketNotification("SCREEN_ERROR", "scan screen command error (mode: 7)");
+                  resolve(false);
+                }
+              }
+            });
+          break;
+        case 8:
+          // pinctrl
+          exec(`pinctrl lev ${this.config.relayGPIOPin}`, async (err, stdout) => {
+            if (err) {
+              console.error(`[MMM-Pir] [LIB] [SCREEN] pinctrl get: ${err}`);
+              this.sendSocketNotification("SCREEN_ERROR", "pinctrl linux command error (mode: 8)");
+              resolve(false);
+            }
+            else {
+              let responseSh = stdout.trim();
+              if (responseSh === "1") {
+                actual = true;
+              } else {
+                actual = false;
+              }
+              resolve(await this.resultDisplay(actual, wanted));
+            }
+          });
+          break;
+        case 9:
+          console.log("[MMM-Pir] [LIB] [SCREEN] [Win Test] by pass check");
+          // by pass check: need to find a command to find monitor state
+          log("[Win Test] Actual:", this.status);
+          log("[Win Test] Wanted:", wanted);
+          resolve(this.resultDisplay(this.status, wanted));
+          break;
+      }
+    });
   }
 
-  resultDisplay (actual, wanted) {
+  async resultDisplay (actual, wanted) {
     if (this.screen.forceOnStart) {
       log("Display: Force On Start");
-      this.setPowerDisplay(true);
-      this.screen.forceOnStart = false;
+      let isOn = await this.setPowerDisplay(true);
+      if (isOn) this.screen.forceOnStart = false;
+      return isOn;
     } else {
       log(`Display -- Actual: ${actual} - Wanted: ${wanted}`);
       this.screen.power = actual;
-      if (actual && !wanted) this.setPowerDisplay(false);
-      if (!actual && wanted) this.setPowerDisplay(true);
+      if (actual && !wanted) return await this.setPowerDisplay(false);
+      else if (!actual && wanted) return await this.setPowerDisplay(true);
+      else return true;
     }
   }
 
+  /**
+   *
+   * @param {*} set
+   * @returns a promise that always resolves a boolean, being true iff the power setting as successfully completed
+   */
   async setPowerDisplay (set) {
     log(`Display ${set ? "ON." : "OFF."}`);
     this.screen.power = set;
     // and finally apply rules !
     this.SendScreenPowerState();
     if (this.screen.awaitBeforeTurnOff && !set) await this.sleep(this.screen.awaitBeforeTurnOffTime);
-    switch (this.config.mode) {
-      case 1:
-        if (set) {
-          exec("DISPLAY=:0 xset dpms force on", (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 1, power ON: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "dpms command error (mode 1 power ON) ");
-            }
-          });
-        } else {
-          exec("DISPLAY=:0 xset dpms force off", (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 1, power OFF: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "dpms command error (mode 1 power OFF)");
-            }
-          });
-        }
-        break;
-      case 2:
-        if (set) {
-          exec(`xrandr --output ${this.screen.hdmiPort} --auto --rotate ${this.screen.xrandrRotation}`, (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 2, power ON: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "xrandr command error (mode 2 power ON)");
-            }
-          });
-        } else {
-          exec(`xrandr --output ${this.screen.hdmiPort} --off`, (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 2, power OFF: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "xrandr command error (mode 2 power OFF)");
-            }
-          });
-        }
-        break;
-      case 3:
-        if (set) {
-          let wrandrOptions = [
-            "--output",
-            this.screen.hdmiPort,
-            "--on",
-            "--transform",
-            this.screen.wrandrRotation
-          ];
-          if (this.screen.wrandrForceMode) wrandrOptions.push("--mode", this.screen.wrandrForceMode);
-          wrandrOptions = wrandrOptions.join(" ");
-          exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlr-randr ${wrandrOptions}`, (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 3, power ON: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "wlr-randr command error (mode 3 power ON)");
-            }
-          });
-        }
-        else {
-          exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlr-randr --output ${this.screen.hdmiPort} --off`, (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 3, power OFF: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "wlr-randr command error (mode 3 power OFF)");
-            }
-          });
-        }
-        break;
-      case 4:
-        if (set) {
-          exec("echo 'on 0' | cec-client -s", (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 4, power ON: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "HDMI CEC command error (mode 4 power ON)");
-            }
-          });
-        } else {
-          exec("echo 'standby 0' | cec-client -s", (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 4, power OFF: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "HDMI CEC command error (mode 4 power OFF)");
-            }
-          });
-        }
-        break;
-      case 5:
-        if (set) {
-          exec(`ddcutil setvcp d6 ${this.config.ddcutil.powerOnCode} --noverify`, (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 5, power ON: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power ON)");
-            } else if (!this.config.ddcutil.skipSetVcpCheck) {
-              // 5 second delay
-              setTimeout(() => {
-                exec("ddcutil getvcp d6", (err, stdout) => {
-                  if (err) {
-                    console.error(`[MMM-Pir] [LIB] [SCREEN] ddcutil Error ${err}`);
-                    this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power ON check)");
-                  }
-                  else {
-                    let responseSh = stdout.trim();
-                    var displaySh = responseSh.split("(sl=")[1];
-                    if (displaySh !== `0x${this.config.ddcutil.powerOnCode})`) {
-                      console.error(`[MMM-Pir] [LIB] [SCREEN] ddcutil Error ${responseSh}`);
-                      this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power ON verify)");
+    return new Promise((resolve) => {
+      switch (this.config.mode) {
+        case 1:
+          if (set) {
+            exec("DISPLAY=:0 xset dpms force on", (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 1, power ON: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "dpms command error (mode 1 power ON) ");
+                resolve(false);
+              } else resolve(true);
+            });
+          } else {
+            exec("DISPLAY=:0 xset dpms force off", (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 1, power OFF: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "dpms command error (mode 1 power OFF)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          break;
+        case 2:
+          if (set) {
+            exec(`xrandr --output ${this.screen.hdmiPort} --auto --rotate ${this.screen.xrandrRotation}`, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 2, power ON: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "xrandr command error (mode 2 power ON)");
+                resolve(false);
+              } else resolve(true);
+            });
+          } else {
+            exec(`xrandr --output ${this.screen.hdmiPort} --off`, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 2, power OFF: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "xrandr command error (mode 2 power OFF)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          break;
+        case 3:
+          if (set) {
+            let wrandrOptions = [
+              "--output",
+              this.screen.hdmiPort,
+              "--on",
+              "--transform",
+              this.screen.wrandrRotation
+            ];
+            if (this.screen.wrandrForceMode) wrandrOptions.push("--mode", this.screen.wrandrForceMode);
+            wrandrOptions = wrandrOptions.join(" ");
+            exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlr-randr ${wrandrOptions}`, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 3, power ON: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "wlr-randr command error (mode 3 power ON)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          else {
+            exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlr-randr --output ${this.screen.hdmiPort} --off`, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 3, power OFF: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "wlr-randr command error (mode 3 power OFF)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          break;
+        case 4:
+          if (set) {
+            exec("echo 'on 0' | cec-client -s", (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 4, power ON: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "HDMI CEC command error (mode 4 power ON)");
+                resolve(false);
+              } else resolve(true);
+            });
+          } else {
+            exec("echo 'standby 0' | cec-client -s", (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 4, power OFF: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "HDMI CEC command error (mode 4 power OFF)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          break;
+        case 5:
+          if (set) {
+            exec(`ddcutil setvcp d6 ${this.config.ddcutil.powerOnCode} --noverify`, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 5, power ON: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power ON)");
+                resolve(false);
+              } else if (!this.config.ddcutil.skipSetVcpCheck) {
+                // 5 second delay
+                setTimeout(() => {
+                  exec("ddcutil getvcp d6", (err, stdout) => {
+                    if (err) {
+                      console.error(`[MMM-Pir] [LIB] [SCREEN] ddcutil Error ${err}`);
+                      this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power ON check)");
+                      resolve(false);
                     }
-                  }
-                });
-              }, 5000);
-            }
-          });
-        } else {
-          exec(`ddcutil setvcp d6 ${this.config.ddcutil.powerOffCode} --noverify`, (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 5, power OFF: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power OFF)");
-            } else if (!this.config.ddcutil.skipSetVcpCheck) {
-              // 1 second delay
-              setTimeout(() => {
-                exec("ddcutil getvcp d6", (err, stdout) => {
-                  if (err) {
-                    console.error(`[MMM-Pir] [LIB] [SCREEN] ddcutil Error ${err}`);
-                    this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power OFF check)");
-                  }
-                  else {
-                    let responseSh = stdout.trim();
-                    var displaySh = responseSh.split("(sl=")[1];
-                    if (displaySh !== `0x${this.config.ddcutil.powerOffCode})`) {
-                      console.error(`[MMM-Pir] [LIB] [SCREEN] ddcutil Error ${responseSh}`);
-                      this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power OFF verify)");
+                    else {
+                      let responseSh = stdout.trim();
+                      var displaySh = responseSh.split("(sl=")[1];
+                      if (displaySh !== `0x${this.config.ddcutil.powerOnCode})`) {
+                        console.error(`[MMM-Pir] [LIB] [SCREEN] ddcutil Error ${responseSh}`);
+                        this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power ON verify)");
+                        resolve(false);
+                      } else resolve(true);
                     }
-                  }
-                });
-              }, 1000);
-            }
-          });
-        }
-        break;
-      case 6:
-        if (set) {
-          exec("xset dpms force on", (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 5, power ON: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "dpms linux command error (mode 6 power ON)");
-            }
-          });
-        } else {
-          exec("xset dpms force off", (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 5, power OFF: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "dpms linux command error (mode 6 power OFF)");
-            }
-          });
-        }
-        break;
-      case 7:
-        if (set) {
-          exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlopm --on ${this.screen.hdmiPort}`, (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 7, power ON: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "wlopm command error (mode 3 power ON)");
-            }
-          });
-        } else {
-          exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlopm --off ${this.screen.hdmiPort}`, (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 7, power OFF: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "wlopm command error (mode 3 power OFF)");
-            }
-          });
-        }
-        break;
-      case 8:
-        if (set) {
-          let cmd = `pinctrl set ${this.config.relayGPIOPin} op dh`;
-          exec(cmd, (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 8, power ON: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "pinctrl linux command error (mode 8 power ON)");
-            }
-          });
-        }
-        else {
-          let cmd = `pinctrl set ${this.config.relayGPIOPin} op dl`;
-          exec(cmd, (err) => {
-            if (err) {
-              console.error(`[MMM-Pir] [LIB] [SCREEN] mode 8, power OFF: ${err}`);
-              this.sendSocketNotification("SCREEN_ERROR", "pinctrl linux command error (mode 8 power OFF)");
-            }
-          });
-        }
-        break;
-    }
+                  });
+                }, 5000);
+              } else resolve(true);
+            });
+          } else {
+            exec(`ddcutil setvcp d6 ${this.config.ddcutil.powerOffCode} --noverify`, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 5, power OFF: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power OFF)");
+                resolve(false);
+              } else if (!this.config.ddcutil.skipSetVcpCheck) {
+                // 1 second delay
+                setTimeout(() => {
+                  exec("ddcutil getvcp d6", (err, stdout) => {
+                    if (err) {
+                      console.error(`[MMM-Pir] [LIB] [SCREEN] ddcutil Error ${err}`);
+                      this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power OFF check)");
+                      resolve(false);
+                    }
+                    else {
+                      let responseSh = stdout.trim();
+                      var displaySh = responseSh.split("(sl=")[1];
+                      if (displaySh !== `0x${this.config.ddcutil.powerOffCode})`) {
+                        console.error(`[MMM-Pir] [LIB] [SCREEN] ddcutil Error ${responseSh}`);
+                        this.sendSocketNotification("SCREEN_ERROR", "ddcutil command error (mode 5 power OFF verify)");
+                        resolve(false);
+                      } else resolve(true);
+                    }
+                  });
+                }, 1000);
+              } else resolve(true);
+            });
+          }
+          break;
+        case 6:
+          if (set) {
+            exec("xset dpms force on", (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 5, power ON: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "dpms linux command error (mode 6 power ON)");
+                resolve(false);
+              } else resolve(true);
+            });
+          } else {
+            exec("xset dpms force off", (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 5, power OFF: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "dpms linux command error (mode 6 power OFF)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          break;
+        case 7:
+          if (set) {
+            exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlopm --on ${this.screen.hdmiPort}`, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 7, power ON: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "wlopm command error (mode 3 power ON)");
+                resolve(false);
+              } else resolve(true);
+            });
+          } else {
+            exec(`WAYLAND_DISPLAY=${this.screen.waylandDisplayName} wlopm --off ${this.screen.hdmiPort}`, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 7, power OFF: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "wlopm command error (mode 3 power OFF)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          break;
+        case 8:
+          if (set) {
+            let cmd = `pinctrl set ${this.config.relayGPIOPin} op dh`;
+            exec(cmd, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 8, power ON: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "pinctrl linux command error (mode 8 power ON)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          else {
+            let cmd = `pinctrl set ${this.config.relayGPIOPin} op dl`;
+            exec(cmd, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 8, power OFF: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "pinctrl linux command error (mode 8 power OFF)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          break;
+        case 9:
+          if (set) {
+            log("[Win Test] Screen On");
+            let ps = "(Add-Type '[DllImport(\"user32.dll\")]public static extern int PostMessage(int h,int m,int w,int l);' -Name a -Pas)::PostMessage(-1,0x0112,0xF170,-1)";
+            exec(ps, { shell: "powershell.exe" }, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 9, power ON: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "windows command command error (mode 9 power ON)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          else {
+            log("[Win Test] Screen Off");
+            let ps = "(Add-Type '[DllImport(\"user32.dll\")]public static extern int PostMessage(int h,int m,int w,int l);' -Name a -Pas)::PostMessage(-1,0x0112,0xF170,2)";
+            exec(ps, { shell: "powershell.exe" }, (err) => {
+              if (err) {
+                console.error(`[MMM-Pir] [LIB] [SCREEN] mode 9, power OFF: ${err}`);
+                this.sendSocketNotification("SCREEN_ERROR", "windows command error (mode 9 power OFF)");
+                resolve(false);
+              } else resolve(true);
+            });
+          }
+          break;
+      }
+    });
   }
 
   state () {
@@ -765,6 +853,10 @@ class SCREEN {
       }
       this.status = status;
     }, 1000);
+  }
+
+  close () {
+    if (this.config.mode) this.setPowerDisplay(true);
   }
 }
 

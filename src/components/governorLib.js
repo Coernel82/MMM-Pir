@@ -2,6 +2,7 @@
 /** bugsounet **/
 
 const exec = require("child_process").exec;
+const Utils = require("./utils");
 
 var log = () => { /* do nothing */ };
 
@@ -16,6 +17,13 @@ class GOVERNOR {
     };
     this.config = Object.assign(this.default, this.config);
     if (this.config.debug === true) log = (...args) => { console.log("[MMM-Pir] [LIB] [GOVERNOR]", ...args); };
+    if (Utils.isWin()) {
+      if (this.config.sleeping || this.config.working) {
+        this.config.sleeping = 0;
+        this.config.working = 0;
+        console.log("[MMM-Pir] [LIB] [GOVERNOR] [Windows] Governor library Disabled");
+      }
+    }
     this.MyGovernor = ["Disabled", "conservative", "ondemand", "userspace", "powersave", "performance"];
     this.Governor = {
       actived: false,
@@ -23,7 +31,15 @@ class GOVERNOR {
       actual: "",
       error: null
     };
-    console.log("[MMM-Pir] [LIB] [GOVERNOR] Governor library initialized...");
+    if (Utils.isWin()) {
+      console.log("[MMM-Pir] [LIB] [GOVERNOR] [Windows] Governor library Disabled");
+      if (this.config.sleeping || this.config.working) {
+        this.config.sleeping = 0;
+        this.config.working = 0;
+      }
+    } else {
+      console.log("[MMM-Pir] [LIB] [GOVERNOR] Governor library initialized...");
+    }
   }
 
   start () {
