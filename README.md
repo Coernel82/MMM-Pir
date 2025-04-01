@@ -9,12 +9,12 @@ It will wake up with a Pir sensor, Touch screen or crontab
 **Minimal MagicMirror² version requirement: v2.28.0** <br>
 **Minimal node version requirement: v20.9.0**
 
-Clone the module into your MagicMirror module folder and execute `npm run setup` in the module's directory.
+Clone the module into your MagicMirror module folder and execute `npm install` in the module's directory.
 ```sh
 cd ~/MagicMirror/modules
 git clone https://github.com/Coernel82/MMM-Pir
 cd MMM-Pir
-npm run setup
+npm install
 ```
 
 This module will verify if all screen saver is disabled and disable it if needed
