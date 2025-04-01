@@ -12,10 +12,25 @@ const LibGovernor = require("./components/governorLib");
 
 module.exports = NodeHelper.create({
   start () {
+    this.stopped = false;
     this.pir = null;
     this.screen = null;
     this.cron = null;
     this.governor = null;
+    process.on("exit", () => {
+      if (!this.stopped) this.stop;
+    });
+  },
+
+  stop () {
+    this.stopped = true;
+    console.log("Stopping module helper: MMM-Pir...");
+    console.log("[MMM-Pir] Stopping Governor");
+    this.governor.working();
+    console.log("[MMM-Pir] Stopping Screen");
+    this.screen.close();
+    console.log("[MMM-Pir] Stopping Pir");
+    this.pir.stop();
   },
 
   socketNotificationReceived (notification, payload) {
@@ -73,7 +88,8 @@ module.exports = NodeHelper.create({
         log("[CALLBACK] Pir:", noti, params || "");
         if (noti === "PIR_DETECTED") {
           this.screen.wakeup();
-          this.sendSocketNotification("PIR_DETECTED-ANIMATE");
+          this.sendSocketNotification("PIR_DETECTED");
+          if (this.config.Pir.animate) this.sendSocketNotification("PIR_ANIMATE");
         } else {
           this.sendSocketNotification(noti, params);
         }
@@ -101,13 +117,16 @@ module.exports = NodeHelper.create({
     let pirConfig = {
       debug: this.config.debug,
       gpio: this.config.Pir.gpio,
-      mode: this.config.Pir.mode
+      mode: this.config.Pir.mode,
+      chip: this.config.Pir.chip,
+      triggerMode: this.config.Pir.triggerMode
     };
 
     let screenConfig = {
       debug: this.config.debug,
       timeout: this.config.Display.timeout,
       mode: this.config.Display.mode,
+      ecoMode: this.config.Display.ecoMode,
       relayGPIOPin: this.config.Display.relayGPIOPin,
       autoDimmer: this.config.Display.autoDimmer,
       xrandrForceRotation: this.config.Display.xrandrForceRotation,
@@ -146,7 +165,7 @@ module.exports = NodeHelper.create({
       this.governor.start();
 
       this.screen = new LibScreen(screenConfig, callbacks.screen);
-      this.screen.activate();
+      this.screen.start();
 
       this.cron = new LibCron(cronConfig, callbacks.cron);
       this.cron.start();

@@ -18,6 +18,7 @@ Module.register("MMM-Pir", {
       colorTo: "#00FF00",
       timeout: 2 * 60 * 1000,
       mode: 1,
+      ecoMode: true,
       counter: true,
       style: 1,
       lastPresence: true,
@@ -28,13 +29,23 @@ Module.register("MMM-Pir", {
       wrandrForceRotation: "normal",
       wrandrForceMode: null,
       waylandDisplayName: "wayland-0",
-      relayGPIOPin: 0
+      relayGPIOPin: 0,
+      ddcutil: {
+        powerOnCode: "01",
+        powerOffCode: "04",
+        skipSetVcpCheck: false,
+        setPowerRetries: 0
+      }
     },
     Pir: {
+      animate: true,
       mode: 0,
-      gpio: 21
+      gpio: 21,
+      chip: "auto",
+      triggerMode: "LH"
     },
     Motion: {
+      animate: true,
       deviceId: 0,
       captureIntervalTime: 1000,
       scoreThreshold: 100
@@ -69,7 +80,8 @@ Module.register("MMM-Pir", {
       show: (...args) => this.show(...args),
       wakeup: () => {
         this.sendSocketNotification("WAKEUP");
-        this.screenDisplay.animateModule();
+        if (this.config.Motion.animate) this.screenDisplay.animateModule();
+        this.sendNotification("MMM_PIR-USER_PRESENCE", true);
       }
     };
 
@@ -137,7 +149,10 @@ Module.register("MMM-Pir", {
           timer: 15000
         });
         break;
-      case "PIR_DETECTED-ANIMATE":
+      case "PIR_DETECTED":
+        this.sendNotification("MMM_PIR-USER_PRESENCE", true);
+        break;
+      case "PIR_ANIMATE":
         this.screenDisplay.animateModule();
         break;
       case "GOVERNOR_ERROR":
