@@ -6,26 +6,28 @@ It will wake up with a Pir sensor, Touch screen or crontab
 
 ## Screenshot
 
-![screenshot1](https://raw.githubusercontent.com/bugsounet/MMM-Pir/dev/screenshot/screenshot.png)
 
-![screenshot2](https://raw.githubusercontent.com/bugsounet/MMM-Pir/dev/screenshot/screenshot2.png)
+![](https://raw.githubusercontent.com/coernel82/MMM-Pir/main/screenshot/screenshot.png)
 
-![screenshot3](https://raw.githubusercontent.com/bugsounet/MMM-Pir/dev/screenshot/screenshot3.png)
+![](https://raw.githubusercontent.com/coernel82/MMM-Pir/main/screenshot/screenshot2.png)
 
-![screenshot4](https://raw.githubusercontent.com/bugsounet/MMM-Pir/dev/screenshot/screenshot4.png)
+![](https://raw.githubusercontent.com/coernel82/MMM-Pir/main/screenshot/screenshot3.png)
+
+![](https://raw.githubusercontent.com/coernel82/MMM-Pir/main/screenshot/screenshot4.png)
+
 
 ## Installation
 
 * **Minimal MagicMirror² version requirement: v2.28.0**
 * **Minimal node version requirement: v20.18.1**
 
-Clone the module into your MagicMirror module folder and execute `npm run setup` in the module's directory.
+Clone the module into your MagicMirror module folder and execute `npm install` in the module's directory.
 
 ```sh
 cd ~/MagicMirror/modules
-git clone https://github.com/bugsounet/MMM-Pir
+git clone https://github.com/Coernel82/MMM-Pir
 cd MMM-Pir
-npm run setup
+npm install
 ```
 
 `MMM-Pir` is now available for Windows environment!

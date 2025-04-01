@@ -39,9 +39,6 @@ if [ "$EUID" -eq 0 ]; then
   exit 255
 fi
 
-echo
-rm -f package-lock.json
-
 Installer_info "Updating..."
 (npm run reset && git pull) || {
   Installer_error "Update Failed!"
@@ -53,4 +50,4 @@ echo
 Installer_info "Ready for Installing..."
 
 # launch installer
-npm run setup
+npm install
