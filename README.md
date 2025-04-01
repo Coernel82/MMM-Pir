@@ -4,6 +4,17 @@
 After a configured time without any user interaction the display will turn off and hide all modules for economy mode.<br>
 It will wake up with a Pir sensor, Touch screen or crontab
 
+## Screenshot
+
+![](https://raw.githubusercontent.com/coernel82/MMM-Pir/main/screenshot/screenshot.png)
+
+![](https://raw.githubusercontent.com/coernel82/MMM-Pir/main/screenshot/screenshot2.png)
+
+![](https://raw.githubusercontent.com/coernel82/MMM-Pir/main/screenshot/screenshot3.png)
+
+![](https://raw.githubusercontent.com/coernel82/MMM-Pir/main/screenshot/screenshot4.png)
+
+
 ## Installation
 
 **Minimal MagicMirror² version requirement: v2.28.0** <br>
