@@ -139,7 +139,7 @@ class PIR {
   gpioDetect () {
     try {
 
-      const Gpio = require('onoff').Gpio;
+      const Gpio = require("onoff").Gpio;
       let edge = "";
       if (this.config.triggerMode === "H") {
         edge = "both";
@@ -147,7 +147,7 @@ class PIR {
         edge = "rising";
       }
 
-      this.pir = new Gpio(this.config.gpio, 'in', edge);
+      this.pir = new Gpio(this.config.gpio, "in", edge);
       this.callback("PIR_STARTED");
       console.log("[MMM-Pir] [LIB] [PIR] Started!");
 
