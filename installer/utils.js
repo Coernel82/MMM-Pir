@@ -376,7 +376,7 @@ module.exports.moduleClean = moduleClean;
 function moduleSetup (callback = () => {}) {
   info("➤ Setup...");
   var emitter = new events.EventEmitter();
-  var child = exec("npm run setup", function (err) {
+  var child = exec("npm install", function (err) {
     if (err) {
       return callback(err);
     }
@@ -444,18 +444,6 @@ async function moduleUpdate (callback = () => {}) {
     });
 }
 module.exports.moduleUpdate = moduleUpdate;
-
-async function moduleRebuild (callback = () => {}) {
-  await moduleClean();
-  await moduleUpdate((err) => {
-    if (err) {
-      error("Error Detected!");
-      process.exit(1);
-    }
-    return callback();
-  });
-}
-module.exports.moduleRebuild = moduleRebuild;
 
 async function checkUserGroup (folder, name) {
   info(`➤ Check ${name} user/group...`);
