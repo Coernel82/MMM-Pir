@@ -71,7 +71,7 @@ To display the module insert it in the config.js file.
     },
     Pir: {
       animate: true,
-      mode: 0,
+      mode: 1,
       gpio: 21,
       triggerMode : "LH"
     },
@@ -176,7 +176,6 @@ For some displays, the `getvcp` commands cause the display to turn-on. In these 
  | triggerMode | Triggering mode (see below) | String | "LH" |
 
 * Available mode:
-  * `mode: 0` - use onoff library
   * `mode: 1` - use python script with gpiozero library
 
 * Available triggering modes:

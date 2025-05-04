@@ -42,30 +42,21 @@ class PIR {
         break;
     }
     switch (this.config.mode) {
-      case 0:
-        console.log("[MMM-Pir] [LIB] [PIR] Mode 0 Selected (gpiod library)");
-        this.gpioDetect();
-        break;
       case 1:
         console.log("[MMM-Pir] [LIB] [PIR] Mode 1 Selected (gpiozero)");
         this.gpiozeroDetect();
         break;
       default:
         console.warn(`[MMM-Pir] [LIB] [PIR] mode: ${this.config.mode} is not a valid value`);
-        console.warn("[MMM-Pir] [LIB] [PIR] set mode 0");
-        this.config.mode = 0;
-        this.gpioDetect();
+        console.warn("[MMM-Pir] [LIB] [PIR] set mode 1");
+        this.config.mode = 1;
+        this.gpiozeroDetect();
         break;
     }
   }
 
   stop () {
     if (!this.running) return;
-    if (this.config.mode === 0 && this.pir) {
-      this.pir.unexport();
-      this.pir = null;
-    }
-
     if (this.config.mode === 1) {
       this.pir.kill();
     }
@@ -132,44 +123,6 @@ class PIR {
       console.warn(`[MMM-Pir] [LIB] [PIR] [PYTHON] The exit code was: ${code}`);
       console.warn(`[MMM-Pir] [LIB] [PIR] [PYTHON] The exit signal was: ${signal}`);
     });
-  }
-
-  /* experimental */
-
-  gpioDetect () {
-    try {
-
-      const Gpio = require("onoff").Gpio;
-      let edge = "";
-      if (this.config.triggerMode === "H") {
-        edge = "both";
-      } else {
-        edge = "rising";
-      }
-
-      this.pir = new Gpio(this.config.gpio, "in", edge);
-      this.callback("PIR_STARTED");
-      console.log("[MMM-Pir] [LIB] [PIR] Started!");
-
-      this.pir.watch((err, value) => {
-        if (err) {
-          console.error(`[MMM-Pir] [LIB] [PIR] [GPIOD] ${err}`);
-          this.callback("PIR_ERROR", err);
-        }
-
-        log(`Sensor read value: ${value}`);
-        if (value === 1) {
-          this.callback("PIR_DETECTED");
-          log("Detected presence");
-        }
-      });
-    } catch (err) {
-      console.error(`[MMM-Pir] [LIB] [PIR] [ONOFF] ${err}`);
-      this.running = false;
-      return this.callback("PIR_ERROR", err.message);
-    }
-
-    this.running = true;
   }
 }
 
