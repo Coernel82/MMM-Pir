@@ -54,7 +54,7 @@
     "eslint-plugin-package-json": "^0.19.0"
   },
   "engines": {
-    "node": ">=20.9.0 <21 || >=22"
+    "node": ">=22.14.0"
   },
   "rev": "250102"
 }
