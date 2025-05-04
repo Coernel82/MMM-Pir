@@ -19,7 +19,7 @@ It will wake up with a Pir sensor, Touch screen or crontab
 ## Installation
 
 * **Minimal MagicMirror² version requirement: v2.28.0**
-* **Minimal node version requirement: v20.18.1**
+* **Minimal node version requirement: v22.14.0** ⚠️
 
 Clone the module into your MagicMirror module folder and execute `npm install` in the module's directory.
 
@@ -71,9 +71,8 @@ To display the module insert it in the config.js file.
     },
     Pir: {
       animate: true,
-      mode: 0,
+      mode: 1,
       gpio: 21,
-      chip: "auto",
       triggerMode : "LH"
     },
     Motion: {
@@ -174,11 +173,9 @@ For some displays, the `getvcp` commands cause the display to turn-on. In these 
  | animate | Animate MMM-Pir module on detect | Boolean | true |
  | mode | Detection mode (see bellow) | Number | 0 |
  | gpio | BCM-number of the sensor pin. | Number | 21 |
- | chip | **-mode 0 Only-** Define your GPIO Chip label (`auto` for automatic chip search) | String | "auto" |
  | triggerMode | Triggering mode (see below) | String | "LH" |
 
 * Available mode:
-  * `mode: 0` - use node-libgpiod library
   * `mode: 1` - use python script with gpiozero library
 
 * Available triggering modes:
