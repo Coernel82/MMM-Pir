@@ -21,7 +21,7 @@
   "main": "MMM-Pir.js",
   "scripts": {
     "clean": "rm -rf node_modules",
-    "dependencies": "installer/dependencies.sh -d 'unclutter ddcutil cec-utils python3 python-is-python3 python3-gpiozero gpiod libgpiod2 libgpiod-dev'",
+    "dependencies": "installer/dependencies.sh -d 'unclutter ddcutil cec-utils python3 python-is-python3 python3-gpiozero'",
     "dev": "cd installer && node dev.js",
     "dev:src": "cd installer && node src.js",
     "preinstall": "npm run dependencies && installer/preinstall.sh",
@@ -43,7 +43,7 @@
     "long-press-event": "^2.5.0",
     "nan": "^2.22.0",
     "node-cron": "^3.0.3",
-    "node-libgpiod": "^0.4.6",
+    "onoff": "^6.0.3",
     "progressbar.js": "^1.1.1",
     "python-shell": "^5.0.0"
   },
