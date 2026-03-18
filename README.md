@@ -1,3 +1,11 @@
+> [!WARNING]
+> This repository exists only because the original author deleted it during a sudden "rage quit".  
+> It has been restored from a local clone.
+>
+> I have no knowledge of the codebase, cannot review or accept pull requests, and am unable to fix bugs.  
+> The code currently has multiple critical security alerts and must be considered unsafe.
+>
+> I would like to transfer ownership of this repository to a new maintainer.
 # MMM-Pir
 
 After a configured time without any user interaction the display will turn off and hide all modules for economy mode.
