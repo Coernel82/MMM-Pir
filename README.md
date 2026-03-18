@@ -1,3 +1,7 @@
+> [!NOTE]
+> This repository is **more up-to-date** than other forks.  
+> Please use and contribute to this version: [MMM-Pir by MarcLandis](https://github.com/MarcLandis/MMM-Pir)
+
 > [!WARNING]
 > This repository exists only because the original author deleted it during a sudden "rage quit".  
 > It has been restored from a local clone.
